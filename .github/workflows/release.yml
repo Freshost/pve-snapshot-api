@@ -29,5 +29,5 @@ jobs:
 
       - name: Upload to Cloudsmith (stable)
         run: |
-          cloudsmith push deb freshost/pve-snapshot-api/debian/bookworm ../pve-snapshot-api_*.deb --component stable
-          cloudsmith push deb freshost/pve-snapshot-api/debian/trixie ../pve-snapshot-api_*.deb --component stable
+          cloudsmith push deb freshost/pve-snapshot-api/debian/bookworm ../pve-snapshot-api_*.deb
+          cloudsmith push deb freshost/pve-snapshot-api/debian/trixie ../pve-snapshot-api_*.deb

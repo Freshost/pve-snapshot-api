@@ -53,7 +53,7 @@ curl -1sLf 'https://dl.cloudsmith.io/public/freshost/pve-snapshot-api/setup.deb.
 apt-get install pve-snapshot-api
 ```
 
-By default the setup script enables the `stable` component. To use development builds instead, edit `/etc/apt/sources.list.d/freshost-pve-snapshot-api.list` and replace `stable` with `dev`, then run `apt-get update`.
+For development builds, edit `/etc/apt/sources.list.d/freshost-pve-snapshot-api.list` and replace `main` with `dev`, then run `apt-get update`.
 
 The `.deb` installs the binary to `/usr/bin/pve-snapshot-api`, creates a default config at `/etc/pve-snapshot-api/config.yaml`, and enables the systemd service.
 
