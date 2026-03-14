@@ -37,7 +37,7 @@ jobs:
       - name: Set dev version
         run: |
           BASE_VERSION=$(head -1 debian/changelog | grep -oP '\(\K[^)]+')
-          DEV_VERSION="${BASE_VERSION}~dev$(date +%Y%m%d).${GITHUB_SHA::7}"
+          DEV_VERSION="${BASE_VERSION}~dev$(date -u +%Y%m%d.%H%M).${GITHUB_SHA::7}"
           sed -i "1s/(${BASE_VERSION})/(${DEV_VERSION})/" debian/changelog
 
       - name: Create orig tarball
