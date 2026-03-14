@@ -20,7 +20,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y debhelper devscripts
 
       - name: Build .deb package
-        run: dpkg-buildpackage -us -uc -b
+        run: dpkg-buildpackage -us -uc -b -d
 
       - name: Install Cloudsmith CLI
         uses: cloudsmith-io/cloudsmith-cli-action@v2

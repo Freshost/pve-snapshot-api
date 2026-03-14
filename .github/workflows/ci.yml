@@ -41,7 +41,7 @@ jobs:
           sed -i "1s/(${BASE_VERSION})/(${DEV_VERSION})/" debian/changelog
 
       - name: Build .deb package
-        run: dpkg-buildpackage -us -uc -b
+        run: dpkg-buildpackage -us -uc -b -d
 
       - name: Install Cloudsmith CLI
         uses: cloudsmith-io/cloudsmith-cli-action@v2
