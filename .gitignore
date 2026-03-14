@@ -1,4 +1,4 @@
-pve-snapshot-api
+/pve-snapshot-api
 *.deb
 *.changes
 *.buildinfo
