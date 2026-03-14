@@ -76,8 +76,8 @@ func NewServer(
 	// Health check
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 
-	// Catch-all: proxy to Proxmox
-	mux.HandleFunc("/", s.handleProxy)
+	// Proxy only API requests to Proxmox
+	mux.HandleFunc("/api2/", s.handleProxy)
 
 	var handler http.Handler = mux
 	handler = s.recoveryMiddleware(handler)
