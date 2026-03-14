@@ -3,11 +3,15 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/freshost/pve-snapshot-api/pkg/pveapi"
 	"github.com/freshost/pve-snapshot-api/pkg/task"
 )
+
+// validVolumeName matches legitimate PVE volume names (e.g. "vm-106-disk-1", "subvol-104-disk-0").
+var validVolumeName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
 // handleCopyVolume intercepts POST /api2/json/nodes/{node}/storage/{storage}/content/{volume}.
 // For zfspool storage, it performs an instant ZFS snapshot+clone instead of the slow
@@ -57,6 +61,16 @@ func (s *Server) handleCopyVolume(w http.ResponseWriter, r *http.Request) {
 	targetVol := target
 	if idx := strings.Index(target, ":"); idx >= 0 {
 		targetVol = target[idx+1:]
+	}
+
+	// Validate volume names
+	if !validVolumeName.MatchString(volume) {
+		pveapi.WriteError(w, http.StatusBadRequest, "invalid volume name")
+		return
+	}
+	if !validVolumeName.MatchString(targetVol) {
+		pveapi.WriteError(w, http.StatusBadRequest, "invalid target volume name")
+		return
 	}
 
 	// Resolve source and target datasets
@@ -129,6 +143,12 @@ func (s *Server) handleDeleteVolume(w http.ResponseWriter, r *http.Request) {
 	// Cluster routing
 	if s.proxy != nil && node != "" && s.proxy.ShouldProxy(r, node) {
 		s.proxy.Forward(w, r, node)
+		return
+	}
+
+	// Validate volume name
+	if !validVolumeName.MatchString(disk) {
+		pveapi.WriteError(w, http.StatusBadRequest, "invalid volume name")
 		return
 	}
 
