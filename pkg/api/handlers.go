@@ -139,10 +139,23 @@ func (s *Server) handleDeleteVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Read origin snapshot before destroying the clone
+	originSnap, _ := s.backend.GetOriginSnapshot(r.Context(), dataset)
+
 	// Destroy the volume
 	if err := s.backend.DestroyVolume(r.Context(), dataset); err != nil {
 		pveapi.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	// Clean up the origin snapshot (e.g. "zroot/VMs/vm-106-disk-1@csi-vm-106-disk-2")
+	if originSnap != "" {
+		parts := strings.SplitN(originSnap, "@", 2)
+		if len(parts) == 2 {
+			if err := s.backend.DeleteSnapshot(r.Context(), parts[0], parts[1]); err != nil {
+				slog.Warn("failed to clean up origin snapshot", "snapshot", originSnap, "error", err)
+			}
+		}
 	}
 
 	// Generate UPID and store result

@@ -30,4 +30,5 @@ type StorageBackend interface {
 	PromoteClone(ctx context.Context, volid string) error
 	GetVolumeInfo(ctx context.Context, volid string) (*VolumeInfo, error)
 	DestroyVolume(ctx context.Context, volid string) error
+	GetOriginSnapshot(ctx context.Context, volid string) (string, error)
 }

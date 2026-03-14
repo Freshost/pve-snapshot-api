@@ -47,6 +47,18 @@ func (z *ZFSBackend) DestroyVolume(ctx context.Context, volid string) error {
 	return nil
 }
 
+func (z *ZFSBackend) GetOriginSnapshot(ctx context.Context, volid string) (string, error) {
+	out, err := z.runZFS(ctx, "get", "-Hp", "-o", "value", "pve-snapshot-api:parent", volid)
+	if err != nil {
+		return "", err
+	}
+	val := strings.TrimSpace(string(out))
+	if val == "" || val == "-" {
+		return "", nil
+	}
+	return val, nil
+}
+
 func (z *ZFSBackend) GetVolumeInfo(ctx context.Context, volid string) (*storage.VolumeInfo, error) {
 	out, err := z.runZFS(ctx, "get", "-Hp", "-o", "value", "volsize,used", volid)
 	if err != nil {

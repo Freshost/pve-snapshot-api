@@ -58,6 +58,10 @@ func (m *mockBackend) DestroyVolume(_ context.Context, volid string) error {
 	return m.destroyVolumeErr
 }
 
+func (m *mockBackend) GetOriginSnapshot(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 // newAuthServer creates an httptest.Server that returns PVE-style permissions JSON.
 func newAuthServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
