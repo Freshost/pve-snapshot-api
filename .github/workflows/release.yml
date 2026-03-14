@@ -19,8 +19,13 @@ jobs:
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y debhelper devscripts
 
-      - name: Build .deb package
-        run: dpkg-buildpackage -us -uc -b -d
+      - name: Create orig tarball
+        run: |
+          VERSION=$(head -1 debian/changelog | grep -oP '\(\K[^)]+' | sed 's/-.*//')
+          tar czf ../pve-snapshot-api_${VERSION}.orig.tar.gz --exclude=.git --exclude=debian --transform "s,^\.,pve-snapshot-api-${VERSION}," .
+
+      - name: Build binary and source packages
+        run: dpkg-buildpackage -us -uc -d
 
       - name: Install Cloudsmith CLI
         uses: cloudsmith-io/cloudsmith-cli-action@v2
@@ -31,3 +36,5 @@ jobs:
         run: |
           cloudsmith push deb freshost/pve-snapshot-api/debian/bookworm ../pve-snapshot-api_*.deb
           cloudsmith push deb freshost/pve-snapshot-api/debian/trixie ../pve-snapshot-api_*.deb
+          cloudsmith push deb freshost/pve-snapshot-api/debian/bookworm ../pve-snapshot-api_*.dsc --sources-path ../
+          cloudsmith push deb freshost/pve-snapshot-api/debian/trixie ../pve-snapshot-api_*.dsc --sources-path ../
