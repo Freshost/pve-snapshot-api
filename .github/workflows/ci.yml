@@ -57,5 +57,5 @@ jobs:
         run: |
           cloudsmith push deb freshost/pve-snapshot-api/debian/bookworm ../pve-snapshot-api_*.deb --component dev --republish
           cloudsmith push deb freshost/pve-snapshot-api/debian/trixie ../pve-snapshot-api_*.deb --component dev --republish
-          cloudsmith push deb freshost/pve-snapshot-api/debian/bookworm ../pve-snapshot-api_*.dsc --component dev --republish --sources-path ../
-          cloudsmith push deb freshost/pve-snapshot-api/debian/trixie ../pve-snapshot-api_*.dsc --component dev --republish --sources-path ../
+          cloudsmith push deb freshost/pve-snapshot-api/debian/bookworm ../pve-snapshot-api_*.dsc --sources-file ../pve-snapshot-api_*.orig.tar.gz --changes-file ../pve-snapshot-api_*.debian.tar.xz --component dev --republish
+          cloudsmith push deb freshost/pve-snapshot-api/debian/trixie ../pve-snapshot-api_*.dsc --sources-file ../pve-snapshot-api_*.orig.tar.gz --changes-file ../pve-snapshot-api_*.debian.tar.xz --component dev --republish
