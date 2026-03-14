@@ -207,7 +207,7 @@ func TestAuthenticate_CacheHit_DifferentStorageMisses(t *testing.T) {
 	assert.Equal(t, int32(2), callCount.Load(), "different storage should miss cache")
 }
 
-func TestAuthenticate_CacheHit_ErrorCached(t *testing.T) {
+func TestAuthenticate_CacheHit_ErrorNotCached(t *testing.T) {
 	var callCount atomic.Int32
 	perms := map[string]map[string]int{
 		"/": {"Sys.Audit": 1},
@@ -223,7 +223,7 @@ func TestAuthenticate_CacheHit_ErrorCached(t *testing.T) {
 
 	err = a.Authenticate(context.Background(), validToken, "local-zfs")
 	require.Error(t, err)
-	assert.Equal(t, int32(1), callCount.Load(), "failed auth result should be cached too")
+	assert.Equal(t, int32(2), callCount.Load(), "failed auth should not be cached")
 }
 
 // ---------------------------------------------------------------------------

@@ -21,6 +21,33 @@ func (s *Server) handleCopyVolume(w http.ResponseWriter, r *http.Request) {
 	storageName := r.PathValue("storage")
 	volume := r.PathValue("volume")
 
+	// Validate volume name early (before auth to avoid leaking auth state)
+	if !validVolumeName.MatchString(volume) {
+		pveapi.WriteError(w, http.StatusBadRequest, "invalid volume name")
+		return
+	}
+
+	// Parse and validate target volume from form body
+	if err := r.ParseForm(); err != nil {
+		pveapi.WriteError(w, http.StatusBadRequest, "invalid form body")
+		return
+	}
+	target := r.FormValue("target")
+	if target == "" {
+		pveapi.WriteError(w, http.StatusBadRequest, "missing target parameter")
+		return
+	}
+
+	// Strip storage prefix if present (e.g. "local-zfs:vm-100-disk-0" → "vm-100-disk-0")
+	targetVol := target
+	if idx := strings.Index(target, ":"); idx >= 0 {
+		targetVol = target[idx+1:]
+	}
+	if !validVolumeName.MatchString(targetVol) {
+		pveapi.WriteError(w, http.StatusBadRequest, "invalid target volume name")
+		return
+	}
+
 	// Check storage type — only intercept zfspool
 	storageType, err := s.poolResolver.StorageType(r.Context(), storageName)
 	if err != nil || storageType != "zfspool" {
@@ -43,33 +70,6 @@ func (s *Server) handleCopyVolume(w http.ResponseWriter, r *http.Request) {
 	// Cluster routing: if node is not local, forward to our API on that node
 	if s.proxy != nil && node != "" && s.proxy.ShouldProxy(r, node) {
 		s.proxy.Forward(w, r, node)
-		return
-	}
-
-	// Parse target volume from form body
-	if err := r.ParseForm(); err != nil {
-		pveapi.WriteError(w, http.StatusBadRequest, "invalid form body")
-		return
-	}
-	target := r.FormValue("target")
-	if target == "" {
-		pveapi.WriteError(w, http.StatusBadRequest, "missing target parameter")
-		return
-	}
-
-	// Strip storage prefix if present (e.g. "local-zfs:vm-100-disk-0" → "vm-100-disk-0")
-	targetVol := target
-	if idx := strings.Index(target, ":"); idx >= 0 {
-		targetVol = target[idx+1:]
-	}
-
-	// Validate volume names
-	if !validVolumeName.MatchString(volume) {
-		pveapi.WriteError(w, http.StatusBadRequest, "invalid volume name")
-		return
-	}
-	if !validVolumeName.MatchString(targetVol) {
-		pveapi.WriteError(w, http.StatusBadRequest, "invalid target volume name")
 		return
 	}
 
@@ -122,6 +122,12 @@ func (s *Server) handleDeleteVolume(w http.ResponseWriter, r *http.Request) {
 	storageName := r.PathValue("storage")
 	disk := r.PathValue("disk")
 
+	// Validate volume name early (before auth to avoid leaking auth state)
+	if !validVolumeName.MatchString(disk) {
+		pveapi.WriteError(w, http.StatusBadRequest, "invalid volume name")
+		return
+	}
+
 	// Check storage type — only intercept zfspool
 	storageType, err := s.poolResolver.StorageType(r.Context(), storageName)
 	if err != nil || storageType != "zfspool" {
@@ -143,12 +149,6 @@ func (s *Server) handleDeleteVolume(w http.ResponseWriter, r *http.Request) {
 	// Cluster routing
 	if s.proxy != nil && node != "" && s.proxy.ShouldProxy(r, node) {
 		s.proxy.Forward(w, r, node)
-		return
-	}
-
-	// Validate volume name
-	if !validVolumeName.MatchString(disk) {
-		pveapi.WriteError(w, http.StatusBadRequest, "invalid volume name")
 		return
 	}
 

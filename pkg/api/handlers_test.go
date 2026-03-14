@@ -138,8 +138,11 @@ func TestHandleCopyVolume(t *testing.T) {
 	t.Run("missing auth", func(t *testing.T) {
 		handler, _ := newTestServer(t, nil)
 
+		form := url.Values{"target": {"local-zfs:vm-200-disk-0"}}
 		req := httptest.NewRequest("POST",
-			"/api2/json/nodes/pve1/storage/local-zfs/content/vm-100-disk-0", nil)
+			"/api2/json/nodes/pve1/storage/local-zfs/content/vm-100-disk-0",
+			strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, req)

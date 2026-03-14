@@ -66,7 +66,9 @@ func (a *Authenticator) Authenticate(ctx context.Context, token, storageID strin
 	}
 
 	err := a.authenticate(ctx, token, storageID)
-	a.cache.Set(cacheKey, storageID, err)
+	if err == nil {
+		a.cache.Set(cacheKey, storageID, nil)
+	}
 	return err
 }
 
