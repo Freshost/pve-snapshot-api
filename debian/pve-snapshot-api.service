@@ -1,0 +1,22 @@
+[Unit]
+Description=PVE Snapshot API
+After=network.target pve-cluster.service
+Requires=pve-cluster.service
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/pve-snapshot-api --config /etc/pve-snapshot-api/config.yaml
+Restart=on-failure
+RestartSec=5
+User=root
+Group=root
+LimitNOFILE=65536
+
+# Security hardening
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=false
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

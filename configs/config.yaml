@@ -1,0 +1,24 @@
+# pve-snapshot-api configuration
+
+# HTTP listen port
+listen_port: 8009
+
+# Timeout for ZFS commands
+zfs_timeout: 30s
+
+# Timeout for pvesh API calls
+pvesh_timeout: 15s
+
+# How long to cache authentication results
+auth_cache_ttl: 60s
+
+# Log level: debug, info, warn, error
+log_level: info
+
+# Proxmox API URL for reverse proxy fallback
+proxmox_api_url: https://localhost:8006
+
+# TLS configuration (uses Proxmox node certificates by default)
+tls:
+  cert_file: /etc/pve/local/pve-ssl.pem
+  key_file: /etc/pve/local/pve-ssl.key

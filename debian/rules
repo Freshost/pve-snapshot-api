@@ -1,0 +1,14 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	CGO_ENABLED=0 go build -ldflags="-s -w" -o pve-snapshot-api ./cmd/pve-snapshot-api/
+
+override_dh_auto_install:
+	install -D -m 0755 pve-snapshot-api $(CURDIR)/debian/pve-snapshot-api/usr/bin/pve-snapshot-api
+	install -D -m 0644 debian/pve-snapshot-api.service $(CURDIR)/debian/pve-snapshot-api/lib/systemd/system/pve-snapshot-api.service
+	install -D -m 0644 configs/config.yaml $(CURDIR)/debian/pve-snapshot-api/usr/share/pve-snapshot-api/config.yaml.example
+
+override_dh_auto_test:

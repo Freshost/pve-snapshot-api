@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - run: go vet ./...
+
+      - run: go test ./...
+
+  dev-build:
+    if: github.event_name == 'push'
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y debhelper devscripts
+
+      - name: Set dev version
+        run: |
+          BASE_VERSION=$(head -1 debian/changelog | grep -oP '\(\K[^)]+')
+          DEV_VERSION="${BASE_VERSION}~dev$(date +%Y%m%d).${GITHUB_SHA::7}"
+          sed -i "1s/(${BASE_VERSION})/(${DEV_VERSION})/" debian/changelog
+
+      - name: Build .deb package
+        run: dpkg-buildpackage -us -uc -b
+
+      - name: Install Cloudsmith CLI
+        uses: cloudsmith-io/cloudsmith-cli-action@v2
+        with:
+          api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
+
+      - name: Upload to Cloudsmith (dev)
+        run: cloudsmith push deb freshost/pve-snapshot-api/debian/bookworm ../pve-snapshot-api_*.deb --component dev

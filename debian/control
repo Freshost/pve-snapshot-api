@@ -1,0 +1,14 @@
+Source: pve-snapshot-api
+Section: admin
+Priority: optional
+Maintainer: Freshost <support@freshost.net>
+Build-Depends: debhelper (>= 12), golang-go (>= 2:1.22)
+Standards-Version: 4.5.0
+
+Package: pve-snapshot-api
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}, pve-cluster, zfsutils-linux
+Description: Per-volume ZFS snapshot API for Proxmox VE
+ HTTP service providing direct ZFS snapshot, clone, and volume
+ operations for Proxmox VE nodes. Designed as a systemd daemon
+ with PVE API token authentication and cluster-aware request proxying.

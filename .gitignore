@@ -1,0 +1,4 @@
+pve-snapshot-api
+*.deb
+*.changes
+*.buildinfo

@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Create config directory if it doesn't exist
+        mkdir -p /etc/pve-snapshot-api
+
+        # Install default config if none exists
+        if [ ! -f /etc/pve-snapshot-api/config.yaml ]; then
+            cp /usr/share/pve-snapshot-api/config.yaml.example /etc/pve-snapshot-api/config.yaml
+        fi
+
+        systemctl daemon-reload
+        systemctl enable pve-snapshot-api.service
+        systemctl start pve-snapshot-api.service || true
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

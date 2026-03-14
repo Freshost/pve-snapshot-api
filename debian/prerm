@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    remove|purge)
+        systemctl stop pve-snapshot-api.service || true
+        systemctl disable pve-snapshot-api.service || true
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0
