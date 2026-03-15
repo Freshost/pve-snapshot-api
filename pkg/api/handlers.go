@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -27,12 +29,31 @@ func (s *Server) handleCopyVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse and validate target volume from form body
-	if err := r.ParseForm(); err != nil {
-		pveapi.WriteError(w, http.StatusBadRequest, "invalid form body")
-		return
+	// Parse target volume from request body.
+	// go-proxmox (used by proxmox-csi-plugin) sends JSON, while native PVE
+	// clients send application/x-www-form-urlencoded. Support both.
+	target := ""
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			pveapi.WriteError(w, http.StatusBadRequest, "failed to read request body")
+			return
+		}
+		var params map[string]interface{}
+		if err := json.Unmarshal(body, &params); err != nil {
+			pveapi.WriteError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if t, ok := params["target"]; ok {
+			target, _ = t.(string)
+		}
+	} else {
+		if err := r.ParseForm(); err != nil {
+			pveapi.WriteError(w, http.StatusBadRequest, "invalid form body")
+			return
+		}
+		target = r.FormValue("target")
 	}
-	target := r.FormValue("target")
 	if target == "" {
 		pveapi.WriteError(w, http.StatusBadRequest, "missing target parameter")
 		return

@@ -135,6 +135,38 @@ func TestHandleCopyVolume(t *testing.T) {
 		assert.Contains(t, upid, ":imgcopy:")
 	})
 
+	t.Run("success - JSON body (go-proxmox / CSI plugin)", func(t *testing.T) {
+		handler, backend := newTestServer(t, nil)
+
+		body := `{"target":"vm-200-disk-0"}`
+		req := httptest.NewRequest("POST",
+			"/api2/json/nodes/pve1/storage/local-zfs/content/vm-100-disk-0",
+			strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "PVEAPIToken=root@pam!csi=secret")
+
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		// Verify ZFS operations
+		require.Len(t, backend.createdSnapshots, 1)
+		assert.Equal(t, "rpool/data/vm-100-disk-0@csi-vm-200-disk-0", backend.createdSnapshots[0])
+
+		require.Len(t, backend.clonedSnapshots, 1)
+		assert.Equal(t, "rpool/data/vm-100-disk-0@csi-vm-200-disk-0->rpool/data/vm-200-disk-0", backend.clonedSnapshots[0])
+
+		// Verify response contains UPID
+		var resp map[string]any
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		upid, ok := resp["data"].(string)
+		require.True(t, ok)
+		assert.Contains(t, upid, "UPID:pve1:")
+		assert.Contains(t, upid, ":imgcopy:")
+	})
+
 	t.Run("missing auth", func(t *testing.T) {
 		handler, _ := newTestServer(t, nil)
 
