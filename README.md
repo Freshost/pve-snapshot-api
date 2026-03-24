@@ -1,5 +1,7 @@
 # pve-snapshot-api
 
+[![OSS hosting by Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
+
 Drop-in Proxmox API middleware that enables **true ZFS snapshots** for [proxmox-csi-plugin](https://github.com/sergelogvinov/proxmox-csi-plugin) — instant, space-efficient, and without requiring `root@pam`.
 
 ## The Problem
@@ -257,6 +259,10 @@ make vet
 # Clean build artifacts
 make clean
 ```
+
+## Open Source Hosting
+
+Package repository hosting is graciously provided by [Cloudsmith](https://cloudsmith.com).
 
 ## License
 
