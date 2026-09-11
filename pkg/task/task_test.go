@@ -12,7 +12,7 @@ func TestGenerateUPID(t *testing.T) {
 	upid := GenerateUPID("pve1", "imgcopy", "vm-100-disk-0", "root@pam")
 
 	assert.True(t, strings.HasPrefix(upid, "UPID:pve1:"))
-	assert.True(t, strings.HasSuffix(upid, ":imgcopy:vm-100-disk-0:root@pam:"))
+	assert.True(t, strings.HasSuffix(upid, ":psaimgcopy:vm-100-disk-0:root@pam:"))
 
 	// Should have 8 colon-separated fields (with trailing colon)
 	parts := strings.Split(strings.TrimSuffix(upid, ":"), ":")
@@ -23,14 +23,14 @@ func TestGenerateUPID(t *testing.T) {
 	assert.Len(t, parts[2], 8) // hex pid
 	assert.Len(t, parts[3], 8) // hex pstart
 	assert.Len(t, parts[4], 8) // hex time
-	assert.Equal(t, "imgcopy", parts[5])
+	assert.Equal(t, "psaimgcopy", parts[5])
 	assert.Equal(t, "vm-100-disk-0", parts[6])
 	assert.Equal(t, "root@pam", parts[7])
 }
 
 func TestGenerateUPID_DifferentTypes(t *testing.T) {
 	upid := GenerateUPID("node2", "imgdel", "vm-200-disk-1", "user@pve")
-	assert.Contains(t, upid, ":imgdel:")
+	assert.Contains(t, upid, ":psaimgdel:")
 	assert.Contains(t, upid, ":vm-200-disk-1:")
 	assert.Contains(t, upid, ":user@pve:")
 }
@@ -44,12 +44,12 @@ func TestExtractUserFromToken(t *testing.T) {
 		{
 			name:     "full token with prefix",
 			token:    "PVEAPIToken=root@pam!csi=secret123",
-			expected: "root@pam",
+			expected: "root@pam!csi",
 		},
 		{
 			name:     "token without prefix",
 			token:    "user@pve!mytoken=abc",
-			expected: "user@pve",
+			expected: "user@pve!mytoken",
 		},
 		{
 			name:     "no exclamation mark",
@@ -85,7 +85,7 @@ func TestStore(t *testing.T) {
 
 	t.Run("put and get", func(t *testing.T) {
 		tr := &TaskResult{
-			UPID:       "UPID:pve1:00000001:00000001:00000001:imgcopy:vm-100-disk-0:root@pam:",
+			UPID:       "UPID:pve1:00000001:00000001:00000001:psaimgcopy:vm-100-disk-0:root@pam:",
 			Node:       "pve1",
 			Status:     "stopped",
 			ExitStatus: "OK",
@@ -103,6 +103,6 @@ func TestStore(t *testing.T) {
 	})
 
 	t.Run("IsOurs returns true for known UPID", func(t *testing.T) {
-		assert.True(t, store.IsOurs("UPID:pve1:00000001:00000001:00000001:imgcopy:vm-100-disk-0:root@pam:"))
+		assert.True(t, store.IsOurs("UPID:pve1:00000001:00000001:00000001:psaimgcopy:vm-100-disk-0:root@pam:"))
 	})
 }

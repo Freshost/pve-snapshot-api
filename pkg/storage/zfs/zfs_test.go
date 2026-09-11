@@ -109,163 +109,6 @@ func TestCreateSnapshot_Error(t *testing.T) {
 // DeleteSnapshot
 // ---------------------------------------------------------------------------
 
-func TestDeleteSnapshot_Success_NoClones(t *testing.T) {
-	m := &mockRunner{
-		results: []mockResult{
-			// list volumes -- no clones reference this snapshot
-			{output: []byte("rpool/data/vm-200-disk-0\t-\n"), err: nil},
-			// destroy
-			{output: nil, err: nil},
-		},
-	}
-	b := newTestBackend(m)
-
-	err := b.DeleteSnapshot(context.Background(), "rpool/data/vm-100-disk-0", "snap1")
-	require.NoError(t, err)
-
-	require.Len(t, m.calls, 2)
-	// First call: list volumes
-	assert.Equal(t, []string{"list", "-H", "-o", "name,pve-snapshot-api:parent", "-t", "volume"}, m.calls[0].Args)
-	// Second call: destroy
-	assert.Equal(t, []string{"destroy", "rpool/data/vm-100-disk-0@snap1"}, m.calls[1].Args)
-}
-
-func TestDeleteSnapshot_PromotesCloneBeforeDestroy(t *testing.T) {
-	dataset := "rpool/data/vm-100-disk-0@snap1"
-	cloneName := "rpool/data/vm-300-disk-0"
-
-	listOutput := fmt.Sprintf("%s\t%s\nrpool/data/vm-200-disk-0\t-\n", cloneName, dataset)
-
-	m := &mockRunner{
-		results: []mockResult{
-			// list volumes -- one clone points to our snapshot
-			{output: []byte(listOutput), err: nil},
-			// promote the clone
-			{output: nil, err: nil},
-			// destroy
-			{output: nil, err: nil},
-		},
-	}
-	b := newTestBackend(m)
-
-	err := b.DeleteSnapshot(context.Background(), "rpool/data/vm-100-disk-0", "snap1")
-	require.NoError(t, err)
-
-	require.Len(t, m.calls, 3)
-	// promote call
-	assert.Equal(t, []string{"promote", cloneName}, m.calls[1].Args)
-	// destroy call
-	assert.Equal(t, []string{"destroy", dataset}, m.calls[2].Args)
-}
-
-func TestDeleteSnapshot_PromotesMultipleClonesBeforeDestroy(t *testing.T) {
-	dataset := "rpool/data/vm-100-disk-0@snap1"
-	clone1 := "rpool/data/vm-300-disk-0"
-	clone2 := "rpool/data/vm-400-disk-0"
-
-	listOutput := fmt.Sprintf("%s\t%s\n%s\t%s\nrpool/data/vm-200-disk-0\t-\n", clone1, dataset, clone2, dataset)
-
-	m := &mockRunner{
-		results: []mockResult{
-			// list volumes
-			{output: []byte(listOutput), err: nil},
-			// promote clone1
-			{output: nil, err: nil},
-			// promote clone2
-			{output: nil, err: nil},
-			// destroy
-			{output: nil, err: nil},
-		},
-	}
-	b := newTestBackend(m)
-
-	err := b.DeleteSnapshot(context.Background(), "rpool/data/vm-100-disk-0", "snap1")
-	require.NoError(t, err)
-
-	require.Len(t, m.calls, 4)
-	assert.Equal(t, []string{"promote", clone1}, m.calls[1].Args)
-	assert.Equal(t, []string{"promote", clone2}, m.calls[2].Args)
-	assert.Equal(t, []string{"destroy", dataset}, m.calls[3].Args)
-}
-
-func TestDeleteSnapshot_Idempotent_DatasetDoesNotExist(t *testing.T) {
-	m := &mockRunner{
-		results: []mockResult{
-			// list volumes
-			{output: []byte(""), err: nil},
-			// destroy -- dataset does not exist
-			{
-				output: []byte("cannot open 'rpool/data/vm-100-disk-0@snap1': dataset does not exist"),
-				err:    fmt.Errorf("exit status 1"),
-			},
-		},
-	}
-	b := newTestBackend(m)
-
-	err := b.DeleteSnapshot(context.Background(), "rpool/data/vm-100-disk-0", "snap1")
-	require.NoError(t, err, "dataset does not exist should be treated as idempotent success")
-}
-
-func TestDeleteSnapshot_Idempotent_CouldNotFindSnapshots(t *testing.T) {
-	m := &mockRunner{
-		results: []mockResult{
-			// list volumes
-			{output: []byte(""), err: nil},
-			// destroy -- could not find any snapshots
-			{
-				output: []byte("could not find any snapshots to destroy"),
-				err:    fmt.Errorf("exit status 1"),
-			},
-		},
-	}
-	b := newTestBackend(m)
-
-	err := b.DeleteSnapshot(context.Background(), "rpool/data/vm-100-disk-0", "snap1")
-	require.NoError(t, err, "could not find any snapshots should be treated as idempotent success")
-}
-
-func TestDeleteSnapshot_ListError_NoDatasetsAvailable(t *testing.T) {
-	m := &mockRunner{
-		results: []mockResult{
-			// list volumes -- no datasets available (not a real error)
-			{
-				output: []byte("no datasets available"),
-				err:    fmt.Errorf("exit status 1"),
-			},
-			// destroy
-			{output: nil, err: nil},
-		},
-	}
-	b := newTestBackend(m)
-
-	err := b.DeleteSnapshot(context.Background(), "rpool/data/vm-100-disk-0", "snap1")
-	require.NoError(t, err)
-}
-
-func TestDeleteSnapshot_PromoteError(t *testing.T) {
-	dataset := "rpool/data/vm-100-disk-0@snap1"
-	cloneName := "rpool/data/vm-300-disk-0"
-
-	listOutput := fmt.Sprintf("%s\t%s\n", cloneName, dataset)
-
-	m := &mockRunner{
-		results: []mockResult{
-			// list volumes
-			{output: []byte(listOutput), err: nil},
-			// promote fails
-			{
-				output: []byte("internal error"),
-				err:    fmt.Errorf("exit status 1"),
-			},
-		},
-	}
-	b := newTestBackend(m)
-
-	err := b.DeleteSnapshot(context.Background(), "rpool/data/vm-100-disk-0", "snap1")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "promoting clone")
-}
-
 // ---------------------------------------------------------------------------
 // CloneSnapshot
 // ---------------------------------------------------------------------------
@@ -284,15 +127,12 @@ func TestCloneSnapshot_Success(t *testing.T) {
 	err := b.CloneSnapshot(context.Background(), "rpool/data/vm-100-disk-0", "snap1", "rpool/data/vm-200-disk-0")
 	require.NoError(t, err)
 
-	require.Len(t, m.calls, 2)
+	require.Len(t, m.calls, 1)
 
 	// Verify clone command args
 	assert.Equal(t, "zfs", m.calls[0].Name)
 	assert.Equal(t, []string{"clone", "rpool/data/vm-100-disk-0@snap1", "rpool/data/vm-200-disk-0"}, m.calls[0].Args)
 
-	// Verify set property command args
-	assert.Equal(t, "zfs", m.calls[1].Name)
-	assert.Equal(t, []string{"set", "pve-snapshot-api:parent=rpool/data/vm-100-disk-0@snap1", "rpool/data/vm-200-disk-0"}, m.calls[1].Args)
 }
 
 func TestCloneSnapshot_CloneError(t *testing.T) {
@@ -311,25 +151,6 @@ func TestCloneSnapshot_CloneError(t *testing.T) {
 	assert.Contains(t, err.Error(), "zfs clone")
 }
 
-func TestCloneSnapshot_SetPropertyError(t *testing.T) {
-	m := &mockRunner{
-		results: []mockResult{
-			// clone succeeds
-			{output: nil, err: nil},
-			// set property fails
-			{
-				output: []byte("permission denied"),
-				err:    fmt.Errorf("exit status 1"),
-			},
-		},
-	}
-	b := newTestBackend(m)
-
-	err := b.CloneSnapshot(context.Background(), "rpool/data/vm-100-disk-0", "snap1", "rpool/data/vm-200-disk-0")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "setting parent property")
-}
-
 // ---------------------------------------------------------------------------
 // ListSnapshots
 // ---------------------------------------------------------------------------
@@ -342,8 +163,8 @@ func TestListSnapshots_ParsesOutput(t *testing.T) {
 
 	// For each snapshot, getClones is called to find dependent clones.
 	// First snapshot has one clone, second has none.
-	clonesOutput1 := "rpool/data/vm-300-disk-0\trpool/data/vm-100-disk-0@daily\n"
-	clonesOutput2 := "rpool/data/vm-400-disk-0\t-\n"
+	clonesOutput1 := "rpool/data/vm-300-disk-0\n"
+	clonesOutput2 := "-\n"
 
 	m := &mockRunner{
 		results: []mockResult{

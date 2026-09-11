@@ -4,95 +4,106 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
+	"regexp"
+	"strings"
 	"time"
 )
 
-// CommandRunner abstracts command execution for testability.
-type CommandRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
-
-type storageInfo struct {
-	Pool string
-	Type string
-}
-
-// Resolver resolves PVE storage names to ZFS pool paths and storage types.
+type CommandRunner func(context.Context, string, ...string) ([]byte, error)
 type Resolver struct {
 	timeout time.Duration
 	run     CommandRunner
-	mu      sync.RWMutex
-	cache   map[string]*storageInfo
+}
+type Info struct {
+	Pool    string `json:"pool"`
+	Type    string `json:"type"`
+	Nodes   string `json:"nodes"`
+	Disable int    `json:"disable"`
 }
 
-// New creates a Resolver with the given timeout and command runner.
-func New(timeout time.Duration, runner CommandRunner) *Resolver {
-	return &Resolver{
-		timeout: timeout,
-		run:     runner,
-		cache:   make(map[string]*storageInfo),
+var validStorage = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`)
+var validVolume = regexp.MustCompile(`^vm-[1-9][0-9]*-disk-[0-9]+$`)
+var validDataset = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.:-]*(/[a-zA-Z0-9][a-zA-Z0-9_.:-]*)*$`)
+
+func New(timeout time.Duration, run CommandRunner) *Resolver {
+	return &Resolver{timeout: timeout, run: run}
+}
+
+// Fetch deliberately reads fresh configuration for every operation. Never cache a
+// mapping used for destructive operations across requests.
+func (r *Resolver) Fetch(ctx context.Context, name string) (*Info, error) {
+	if !validStorage.MatchString(name) {
+		return nil, fmt.Errorf("invalid storage ID")
 	}
-}
-
-// pveshStorage represents the JSON response from pvesh get /storage/{name}.
-type pveshStorage struct {
-	Pool string `json:"pool"`
-	Type string `json:"type"`
-}
-
-func (r *Resolver) fetch(ctx context.Context, storageName string) (*storageInfo, error) {
-	r.mu.RLock()
-	if info, ok := r.cache[storageName]; ok {
-		r.mu.RUnlock()
-		return info, nil
-	}
-	r.mu.RUnlock()
-
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
-
-	out, err := r.run(ctx, "pvesh", "get", fmt.Sprintf("/storage/%s", storageName), "--output-format", "json")
+	out, err := r.run(ctx, "pvesh", "get", "/storage/"+name, "--output-format", "json")
 	if err != nil {
-		return nil, fmt.Errorf("pvesh get /storage/%s: %s: %w", storageName, string(out), err)
+		return nil, fmt.Errorf("storage %s: %s: %w", name, out, err)
 	}
-
-	var s pveshStorage
-	if err := json.Unmarshal(out, &s); err != nil {
-		return nil, fmt.Errorf("parsing storage %s: %w", storageName, err)
+	var info Info
+	if err = json.Unmarshal(out, &info); err != nil {
+		return nil, fmt.Errorf("parsing storage: %w", err)
 	}
-
-	info := &storageInfo{Pool: s.Pool, Type: s.Type}
-
-	r.mu.Lock()
-	r.cache[storageName] = info
-	r.mu.Unlock()
-
-	return info, nil
+	if info.Type == "" {
+		return nil, fmt.Errorf("missing storage type")
+	}
+	return &info, nil
 }
-
-// Resolve returns the ZFS pool path for a given PVE storage name.
-func (r *Resolver) Resolve(ctx context.Context, storageName string) (string, error) {
-	info, err := r.fetch(ctx, storageName)
-	if err != nil {
-		return "", err
+func (i *Info) Available(node string) error {
+	if i.Disable != 0 {
+		return fmt.Errorf("storage is disabled")
 	}
-	return info.Pool, nil
+	if i.Nodes != "" {
+		for _, n := range strings.Split(i.Nodes, ",") {
+			if n == node {
+				return nil
+			}
+		}
+		return fmt.Errorf("storage unavailable on node %s", node)
+	}
+	return nil
 }
-
-// StorageType returns the storage type (e.g. "zfspool", "lvm") for a PVE storage name.
-func (r *Resolver) StorageType(ctx context.Context, storageName string) (string, error) {
-	info, err := r.fetch(ctx, storageName)
-	if err != nil {
-		return "", err
+func NormalizeVolume(storage, id string) (string, error) {
+	if prefix, name, ok := strings.Cut(id, ":"); ok {
+		if prefix != storage {
+			return "", fmt.Errorf("storage ID mismatch")
+		}
+		id = name
 	}
-	return info.Type, nil
+	if !validVolume.MatchString(id) {
+		return "", fmt.Errorf("only vm-<id>-disk-<index> ZFS volumes are supported")
+	}
+	return id, nil
 }
-
-// VolumeToDataset converts a PVE volume ID (e.g. "vm-100-disk-0") to a full
-// ZFS dataset path (e.g. "rpool/data/vm-100-disk-0") using the storage's pool.
-func (r *Resolver) VolumeToDataset(ctx context.Context, storageName, volumeID string) (string, error) {
-	pool, err := r.Resolve(ctx, storageName)
-	if err != nil {
-		return "", err
+func (i *Info) Dataset(volume string) (string, error) {
+	if i.Type != "zfspool" || !validDataset.MatchString(i.Pool) || !validVolume.MatchString(volume) {
+		return "", fmt.Errorf("invalid ZFS pool or volume")
 	}
-	return pool + "/" + volumeID, nil
+	return i.Pool + "/" + volume, nil
+}
+func (r *Resolver) Resolve(ctx context.Context, name string) (string, error) {
+	i, e := r.Fetch(ctx, name)
+	if e != nil {
+		return "", e
+	}
+	return i.Pool, nil
+}
+func (r *Resolver) StorageType(ctx context.Context, name string) (string, error) {
+	i, e := r.Fetch(ctx, name)
+	if e != nil {
+		return "", e
+	}
+	return i.Type, nil
+}
+func (r *Resolver) VolumeToDataset(ctx context.Context, name, id string) (string, error) {
+	i, e := r.Fetch(ctx, name)
+	if e != nil {
+		return "", e
+	}
+	v, e := NormalizeVolume(name, id)
+	if e != nil {
+		return "", e
+	}
+	return i.Dataset(v)
 }

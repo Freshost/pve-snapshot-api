@@ -11,11 +11,18 @@ import (
 
 type statusWriter struct {
 	http.ResponseWriter
-	status int
+	status      int
+	wroteHeader bool
 }
 
 func (sw *statusWriter) WriteHeader(code int) {
-	sw.status = code
+	if sw.wroteHeader {
+		return
+	}
+	if code >= 200 {
+		sw.wroteHeader = true
+		sw.status = code
+	}
 	sw.ResponseWriter.WriteHeader(code)
 }
 
@@ -46,4 +53,12 @@ func (s *Server) recoveryMiddleware(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (sw *statusWriter) Unwrap() http.ResponseWriter { return sw.ResponseWriter }
+func (sw *statusWriter) Write(b []byte) (int, error) {
+	if !sw.wroteHeader {
+		sw.WriteHeader(http.StatusOK)
+	}
+	return sw.ResponseWriter.Write(b)
 }

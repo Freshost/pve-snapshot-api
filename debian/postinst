@@ -11,9 +11,6 @@ case "$1" in
             cp /usr/share/pve-snapshot-api/config.yaml.example /etc/pve-snapshot-api/config.yaml
         fi
 
-        systemctl daemon-reload
-        systemctl enable pve-snapshot-api.service
-        systemctl start pve-snapshot-api.service || true
         ;;
 esac
 

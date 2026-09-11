@@ -13,13 +13,6 @@ func (z *ZFSBackend) CloneSnapshot(ctx context.Context, volid, snapname, target 
 		return fmt.Errorf("zfs clone %s -> %s: %s: %w", dataset, target, string(out), err)
 	}
 
-	// Set user property to track parent snapshot
-	prop := fmt.Sprintf("pve-snapshot-api:parent=%s", dataset)
-	out, err = z.runZFS(ctx, "set", prop, target)
-	if err != nil {
-		return fmt.Errorf("setting parent property on %s: %s: %w", target, string(out), err)
-	}
-
 	return nil
 }
 

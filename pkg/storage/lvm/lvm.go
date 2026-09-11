@@ -44,3 +44,7 @@ func (l *LVMBackend) DestroyVolume(_ context.Context, _ string) error {
 func (l *LVMBackend) GetOriginSnapshot(_ context.Context, _ string) (string, error) {
 	return "", fmt.Errorf("LVM storage backend not implemented")
 }
+
+func (l *LVMBackend) CopyVolume(context.Context, string, string) error {
+	return fmt.Errorf("LVM storage backend not implemented")
+}
