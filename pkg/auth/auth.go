@@ -2,20 +2,17 @@ package auth
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
+	"net/url"
 	"strings"
 	"time"
+
+	"github.com/freshost/pve-snapshot-api/pkg/pvetls"
 )
 
-const pveCAPath = "/etc/pve/pve-root-ca.pem"
-
-// Authenticator validates PVE API tokens via the Proxmox HTTP API.
 type Authenticator struct {
 	timeout time.Duration
 	apiURL  string
@@ -23,114 +20,91 @@ type Authenticator struct {
 	cache   *AuthCache
 }
 
-// New creates an Authenticator that validates tokens against the PVE API at pveAPIURL.
-func New(timeout time.Duration, pveAPIURL string, cacheTTL time.Duration) *Authenticator {
-	tlsConfig := &tls.Config{}
-	if caCert, err := os.ReadFile(pveCAPath); err == nil {
-		certPool := x509.NewCertPool()
-		certPool.AppendCertsFromPEM(caCert)
-		tlsConfig.RootCAs = certPool
-	} else {
-		tlsConfig.InsecureSkipVerify = true
+func New(timeout time.Duration, apiURL string, ttl time.Duration, caPaths ...string) *Authenticator {
+	ca := "/etc/pve/pve-root-ca.pem"
+	if len(caPaths) > 0 {
+		ca = caPaths[0]
 	}
-
-	return &Authenticator{
-		timeout: timeout,
-		apiURL:  strings.TrimRight(pveAPIURL, "/"),
-		client: &http.Client{
-			Timeout:   timeout,
-			Transport: &http.Transport{TLSClientConfig: tlsConfig},
-		},
-		cache: NewCache(cacheTTL),
-	}
+	return NewWithClient(timeout, apiURL, &http.Client{Timeout: timeout, Transport: pvetls.Transport(ca), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, ttl)
+}
+func NewWithClient(timeout time.Duration, apiURL string, client *http.Client, ttl time.Duration) *Authenticator {
+	return &Authenticator{timeout: timeout, apiURL: strings.TrimRight(apiURL, "/"), client: client, cache: NewCache(ttl)}
 }
 
-// NewWithClient creates an Authenticator with a custom http.Client (for testing).
-func NewWithClient(timeout time.Duration, pveAPIURL string, client *http.Client, cacheTTL time.Duration) *Authenticator {
-	return &Authenticator{
-		timeout: timeout,
-		apiURL:  strings.TrimRight(pveAPIURL, "/"),
-		client:  client,
-		cache:   NewCache(cacheTTL),
-	}
-}
-
-// Authenticate validates a PVE API token has Datastore.Allocate permission
-// on the given storage. storageID is the PVE storage name (e.g. "local-zfs").
-// If storageID is empty, only root-level permission is accepted.
-// Token format: PVEAPIToken=user@realm!tokenid=secret
-func (a *Authenticator) Authenticate(ctx context.Context, token, storageID string) error {
-	cacheKey := token + ":" + storageID
-	if err, ok := a.cache.Get(cacheKey, storageID); ok {
-		return err
-	}
-
-	err := a.authenticate(ctx, token, storageID)
-	if err == nil {
-		a.cache.Set(cacheKey, storageID, nil)
-	}
-	return err
-}
-
-func (a *Authenticator) authenticate(ctx context.Context, token, storageID string) error {
+// Identity preserves the full token ID; separate tokens are separate principals.
+func Identity(token string) (string, error) {
 	if !strings.HasPrefix(token, "PVEAPIToken=") {
-		return fmt.Errorf("invalid token format: must start with PVEAPIToken=")
+		return "", fmt.Errorf("invalid token format")
 	}
-
-	parts := strings.SplitN(token, "=", 3)
-	if len(parts) < 3 {
-		return fmt.Errorf("invalid token format")
+	id, secret, ok := strings.Cut(strings.TrimPrefix(token, "PVEAPIToken="), "=")
+	user, tokenID, hasToken := strings.Cut(id, "!")
+	if !ok || secret == "" || !hasToken || tokenID == "" || !strings.Contains(user, "@") || strings.ContainsAny(id, " :\r\n\t=") {
+		return "", fmt.Errorf("invalid token format")
 	}
+	return id, nil
+}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", a.apiURL+"/api2/json/access/permissions", nil)
+func (a *Authenticator) permissions(ctx context.Context, token, path string) (map[string]int, error) {
+	if _, err := Identity(token); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, a.timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", a.apiURL+"/api2/json/access/permissions?"+url.Values{"path": {path}}.Encode(), nil)
 	if err != nil {
-		return fmt.Errorf("creating auth request: %w", err)
+		return nil, err
 	}
 	req.Header.Set("Authorization", token)
-
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("PVE auth request failed: %w", err)
+		return nil, fmt.Errorf("PVE auth request failed: %w", err)
 	}
 	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("reading auth response: %w", err)
-	}
-
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("PVE auth request failed: HTTP %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("PVE auth request failed: HTTP %d", resp.StatusCode)
 	}
-
 	var wrapper struct {
 		Data map[string]map[string]int `json:"data"`
 	}
-	if err := json.Unmarshal(body, &wrapper); err != nil {
-		return fmt.Errorf("parsing permissions: %w", err)
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&wrapper); err != nil {
+		return nil, fmt.Errorf("parsing permissions: %w", err)
 	}
-
-	perms := wrapper.Data
-
-	// Root-level permission covers everything
-	if privs, ok := perms["/"]; ok {
-		if privs["Datastore.Allocate"] == 1 {
-			return nil
-		}
-	}
-
-	// Check specific storage path: /storage/{storageID}
+	return wrapper.Data[path], nil
+}
+func (a *Authenticator) Authenticate(ctx context.Context, token, storageID string) error {
+	path := "/"
 	if storageID != "" {
-		storagePath := "/storage/" + storageID
-		if privs, ok := perms[storagePath]; ok {
-			if privs["Datastore.Allocate"] == 1 {
-				return nil
-			}
-		}
+		path = "/storage/" + storageID
 	}
+	if err, ok := a.cache.Get(token, path); ok {
+		return err
+	}
+	perms, err := a.permissions(ctx, token, path)
+	if err != nil {
+		return err
+	}
+	if _, ok := perms["Datastore.Allocate"]; !ok {
+		return fmt.Errorf("insufficient permissions: Datastore.Allocate required on %s", path)
+	}
+	a.cache.Set(token, path, nil)
+	return nil
+}
 
-	if storageID != "" {
-		return fmt.Errorf("insufficient permissions: Datastore.Allocate required on /storage/%s", storageID)
+func (a *Authenticator) AuthorizeTask(ctx context.Context, token, owner, node string) error {
+	id, err := Identity(token)
+	if err != nil {
+		return err
 	}
-	return fmt.Errorf("insufficient permissions: Datastore.Allocate required")
+	// Always validate the token, even when the supplied ID matches the owner.
+	perms, err := a.permissions(ctx, token, "/nodes/"+node)
+	if err != nil {
+		return err
+	}
+	if id == owner {
+		return nil
+	}
+	if _, ok := perms["Sys.Audit"]; ok {
+		return nil
+	}
+	return fmt.Errorf("insufficient permissions: task owner or Sys.Audit required")
 }

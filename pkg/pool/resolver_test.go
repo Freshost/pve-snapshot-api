@@ -39,7 +39,7 @@ func TestVolumeToDataset(t *testing.T) {
 	assert.Equal(t, "rpool/data/vm-100-disk-0", ds)
 }
 
-func TestResolverCaching(t *testing.T) {
+func TestResolverAlwaysRefreshes(t *testing.T) {
 	callCount := 0
 	runner := func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		callCount++
@@ -55,8 +55,8 @@ func TestResolverCaching(t *testing.T) {
 	_, err = r.StorageType(context.Background(), "zfs1")
 	require.NoError(t, err)
 
-	// Should only call pvesh once due to caching
-	assert.Equal(t, 1, callCount)
+	// Every request reads current mapping.
+	assert.Equal(t, 3, callCount)
 }
 
 func TestResolverError(t *testing.T) {

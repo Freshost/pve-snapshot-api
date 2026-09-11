@@ -23,6 +23,7 @@ type VolumeInfo struct {
 }
 
 type StorageBackend interface {
+	CopyVolume(ctx context.Context, source, target string) error
 	CreateSnapshot(ctx context.Context, volid, snapname string) error
 	DeleteSnapshot(ctx context.Context, volid, snapname string) error
 	CloneSnapshot(ctx context.Context, volid, snapname, target string) error

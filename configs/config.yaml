@@ -22,3 +22,9 @@ proxmox_api_url: https://localhost:8006
 tls:
   cert_file: /etc/pve/local/pve-ssl.pem
   key_file: /etc/pve/local/pve-ssl.key
+
+# Add this CA to system roots; use an empty string for system roots only.
+ca_file: /etc/pve/pve-root-ca.pem
+
+# Durable task results (retained for 7 days, up to 10000 tasks).
+task_state_file: /var/lib/pve-snapshot-api/tasks.json

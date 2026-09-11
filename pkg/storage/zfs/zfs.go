@@ -3,6 +3,7 @@ package zfs
 import (
 	"context"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/freshost/pve-snapshot-api/pkg/config"
@@ -18,6 +19,7 @@ func DefaultRunner(ctx context.Context, name string, args ...string) ([]byte, er
 
 // ZFSBackend implements storage operations using ZFS commands.
 type ZFSBackend struct {
+	mu      sync.Mutex
 	timeout time.Duration
 	run     CommandRunner
 }

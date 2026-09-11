@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -66,7 +66,7 @@ func (m *mockBackend) GetOriginSnapshot(_ context.Context, _ string) (string, er
 func newAuthServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"data":{"/":{"Datastore.Allocate":1}}}`)
+		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{r.URL.Query().Get("path"): map[string]int{"Datastore.Allocate": 1}}})
 	}))
 }
 
@@ -132,7 +132,7 @@ func TestHandleCopyVolume(t *testing.T) {
 		upid, ok := resp["data"].(string)
 		require.True(t, ok)
 		assert.Contains(t, upid, "UPID:pve1:")
-		assert.Contains(t, upid, ":imgcopy:")
+		assert.Contains(t, upid, ":psaimgcopy:")
 	})
 
 	t.Run("success - JSON body (go-proxmox / CSI plugin)", func(t *testing.T) {
@@ -164,7 +164,7 @@ func TestHandleCopyVolume(t *testing.T) {
 		upid, ok := resp["data"].(string)
 		require.True(t, ok)
 		assert.Contains(t, upid, "UPID:pve1:")
-		assert.Contains(t, upid, ":imgcopy:")
+		assert.Contains(t, upid, ":psaimgcopy:")
 	})
 
 	t.Run("missing auth", func(t *testing.T) {
@@ -219,7 +219,7 @@ func TestHandleDeleteVolume(t *testing.T) {
 		require.NoError(t, err)
 		upid, ok := resp["data"].(string)
 		require.True(t, ok)
-		assert.Contains(t, upid, ":imgdel:")
+		assert.Contains(t, upid, ":psaimgdel:")
 	})
 
 	t.Run("missing auth", func(t *testing.T) {
@@ -258,7 +258,7 @@ func TestHandleTaskStatus(t *testing.T) {
 			Status:     "stopped",
 			ExitStatus: "OK",
 			Type:       "imgcopy",
-			User:       "root@pam",
+			User:       "root@pam!csi",
 			ID:         "vm-100-disk-0",
 		})
 
@@ -266,6 +266,7 @@ func TestHandleTaskStatus(t *testing.T) {
 
 		req := httptest.NewRequest("GET",
 			"/api2/json/nodes/pve1/tasks/"+url.PathEscape(upid)+"/status", nil)
+		req.Header.Set("Authorization", "PVEAPIToken=root@pam!csi=secret")
 
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, req)
@@ -303,7 +304,7 @@ func TestHandleHealthz(t *testing.T) {
 
 func TestNonInterceptedRequestsProxy(t *testing.T) {
 	// Set up a fake PVE backend
-	pveBackend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	pveBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]any{"data": "proxied"})
@@ -334,5 +335,13 @@ func TestNonInterceptedRequestsProxy(t *testing.T) {
 	// Should be proxied (may get a connection error since we're using TLS test server,
 	// but the important thing is it didn't return our intercepted handler's response)
 	// The test verifies the proxy path was taken, not the actual upstream response.
-	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func (m *mockBackend) CopyVolume(ctx context.Context, source, target string) error {
+	snap := "csi-" + target[strings.LastIndex(target, "/")+1:]
+	if err := m.CreateSnapshot(ctx, source, snap); err != nil {
+		return err
+	}
+	return m.CloneSnapshot(ctx, source, snap, target)
 }

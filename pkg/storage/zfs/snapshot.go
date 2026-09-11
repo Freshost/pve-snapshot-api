@@ -21,43 +21,12 @@ func (z *ZFSBackend) CreateSnapshot(ctx context.Context, volid, snapname string)
 	return nil
 }
 
+// DeleteSnapshot defers deletion while referenced. Promoting is a volume
+// deletion concern; a snapshot delete must not mutate dependent volumes.
 func (z *ZFSBackend) DeleteSnapshot(ctx context.Context, volid, snapname string) error {
-	dataset := fmt.Sprintf("%s@%s", volid, snapname)
-
-	// Find dependent clones via user property
-	out, err := z.runZFS(ctx, "list", "-H", "-o", "name,pve-snapshot-api:parent", "-t", "volume")
+	out, err := z.runZFS(ctx, "destroy", "-d", volid+"@"+snapname)
 	if err != nil {
-		// If no volumes exist, that's fine
-		if !strings.Contains(string(out), "no datasets available") {
-			return fmt.Errorf("listing clones: %s: %w", string(out), err)
-		}
-	}
-
-	// Promote any clones that depend on this snapshot
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
-		fields := strings.SplitN(line, "\t", 2)
-		if len(fields) != 2 {
-			continue
-		}
-		parent := strings.TrimSpace(fields[1])
-		if parent == dataset {
-			cloneName := strings.TrimSpace(fields[0])
-			if _, err := z.runZFS(ctx, "promote", cloneName); err != nil {
-				return fmt.Errorf("promoting clone %s: %w", cloneName, err)
-			}
-		}
-	}
-
-	out, err = z.runZFS(ctx, "destroy", dataset)
-	if err != nil {
-		if strings.Contains(string(out), "could not find any snapshots") ||
-			strings.Contains(string(out), "dataset does not exist") {
-			return nil // idempotent
-		}
-		return fmt.Errorf("zfs destroy %s: %s: %w", dataset, string(out), err)
+		return fmt.Errorf("delete snapshot: %s: %w", out, err)
 	}
 	return nil
 }
@@ -107,23 +76,13 @@ func (z *ZFSBackend) ListSnapshots(ctx context.Context, volid string) ([]storage
 }
 
 func (z *ZFSBackend) getClones(ctx context.Context, snapDataset string) ([]string, error) {
-	out, err := z.runZFS(ctx, "list", "-H", "-o", "name,pve-snapshot-api:parent", "-t", "volume")
+	out, err := z.runZFS(ctx, "get", "-H", "-o", "value", "clones", snapDataset)
 	if err != nil {
 		return nil, err
 	}
-
-	var clones []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
-		fields := strings.SplitN(line, "\t", 2)
-		if len(fields) != 2 {
-			continue
-		}
-		if strings.TrimSpace(fields[1]) == snapDataset {
-			clones = append(clones, strings.TrimSpace(fields[0]))
-		}
+	value := strings.TrimSpace(string(out))
+	if value == "" || value == "-" {
+		return nil, nil
 	}
-	return clones, nil
+	return strings.Split(value, ","), nil
 }

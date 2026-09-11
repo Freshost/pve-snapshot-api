@@ -63,7 +63,9 @@ func TestAuthenticate_InvalidToken_MissingSecret(t *testing.T) {
 
 func TestAuthenticate_Success_RootPath(t *testing.T) {
 	perms := map[string]map[string]int{
-		"/": {"Datastore.Allocate": 1},
+		"/":                  {"Datastore.Allocate": 1},
+		"/storage/local-zfs": {"Datastore.Allocate": 1},
+		"/storage/ceph-pool": {"Datastore.Allocate": 1},
 	}
 	srv := httptest.NewServer(pvePermissionsHandler(perms, nil))
 	defer srv.Close()
@@ -87,7 +89,9 @@ func TestAuthenticate_Success_SpecificStoragePath(t *testing.T) {
 
 func TestAuthenticate_Success_EmptyStorageWithRootPerm(t *testing.T) {
 	perms := map[string]map[string]int{
-		"/": {"Datastore.Allocate": 1},
+		"/":                  {"Datastore.Allocate": 1},
+		"/storage/local-zfs": {"Datastore.Allocate": 1},
+		"/storage/ceph-pool": {"Datastore.Allocate": 1},
 	}
 	srv := httptest.NewServer(pvePermissionsHandler(perms, nil))
 	defer srv.Close()
@@ -172,7 +176,9 @@ func TestAuthenticate_Fail_ConnectionError(t *testing.T) {
 func TestAuthenticate_CacheHit(t *testing.T) {
 	var callCount atomic.Int32
 	perms := map[string]map[string]int{
-		"/": {"Datastore.Allocate": 1},
+		"/":                  {"Datastore.Allocate": 1},
+		"/storage/local-zfs": {"Datastore.Allocate": 1},
+		"/storage/ceph-pool": {"Datastore.Allocate": 1},
 	}
 	srv := httptest.NewServer(pvePermissionsHandler(perms, &callCount))
 	defer srv.Close()
@@ -191,7 +197,9 @@ func TestAuthenticate_CacheHit(t *testing.T) {
 func TestAuthenticate_CacheHit_DifferentStorageMisses(t *testing.T) {
 	var callCount atomic.Int32
 	perms := map[string]map[string]int{
-		"/": {"Datastore.Allocate": 1},
+		"/":                  {"Datastore.Allocate": 1},
+		"/storage/local-zfs": {"Datastore.Allocate": 1},
+		"/storage/ceph-pool": {"Datastore.Allocate": 1},
 	}
 	srv := httptest.NewServer(pvePermissionsHandler(perms, &callCount))
 	defer srv.Close()
@@ -233,7 +241,9 @@ func TestAuthenticate_CacheHit_ErrorNotCached(t *testing.T) {
 func TestAuthenticate_CacheExpiry(t *testing.T) {
 	var callCount atomic.Int32
 	perms := map[string]map[string]int{
-		"/": {"Datastore.Allocate": 1},
+		"/":                  {"Datastore.Allocate": 1},
+		"/storage/local-zfs": {"Datastore.Allocate": 1},
+		"/storage/ceph-pool": {"Datastore.Allocate": 1},
 	}
 	srv := httptest.NewServer(pvePermissionsHandler(perms, &callCount))
 	defer srv.Close()
@@ -260,7 +270,7 @@ func TestAuthenticate_TokenForwarded(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"data":{"/":{"Datastore.Allocate":1}}}`)
+		fmt.Fprintf(w, `{"data":{"/storage/local-zfs":{"Datastore.Allocate":1}}}`)
 	}))
 	defer srv.Close()
 

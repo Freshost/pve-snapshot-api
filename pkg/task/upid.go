@@ -1,29 +1,35 @@
 package task
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 )
 
-// GenerateUPID creates a Proxmox-compatible UPID string.
-// Format: UPID:{node}:{pid}:{pstart}:{starttime}:{type}:{id}:{user}:
-func GenerateUPID(node, taskType, id, user string) string {
-	pid := os.Getpid()
-	now := time.Now().Unix()
-	return fmt.Sprintf("UPID:%s:%08X:%08X:%08X:%s:%s:%s:",
-		node, pid, pid, now, taskType, id, user)
-}
-
-// ExtractUserFromToken extracts the user@realm part from a PVE API token.
-// Token format: PVEAPIToken=user@realm!tokenid=secret
-func ExtractUserFromToken(token string) string {
-	token = strings.TrimPrefix(token, "PVEAPIToken=")
-	// user@realm!tokenid=secret
-	parts := strings.SplitN(token, "!", 2)
-	if len(parts) < 1 {
-		return "root@pam"
+// Synthetic UPIDs use a distinct worker type and 64 random bits, never a real
+// worker PID. They must only be polled through this service.
+func GenerateUPID(node, kind, id, user string) string {
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		panic(err)
 	}
-	return parts[0]
+	return fmt.Sprintf("UPID:%s:%08X:%08X:%08X:psa%s:%s:%s:", node, binary.BigEndian.Uint32(nonce[:4]), binary.BigEndian.Uint32(nonce[4:]), time.Now().Unix(), kind, id, user)
+}
+func IsManagedUPID(upid string) bool {
+	p := strings.Split(upid, ":")
+	return len(p) == 9 && p[0] == "UPID" && (p[5] == "psaimgcopy" || p[5] == "psaimgdel")
+}
+func Node(upid string) string {
+	p := strings.Split(upid, ":")
+	if len(p) != 9 || p[0] != "UPID" {
+		return ""
+	}
+	return p[1]
+}
+func ExtractUserFromToken(token string) string {
+	v := strings.TrimPrefix(token, "PVEAPIToken=")
+	id, _, _ := strings.Cut(v, "=")
+	return id
 }

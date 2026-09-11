@@ -1,40 +1,62 @@
-name: Release
+name: Publish packages and release
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      channel:
+        required: true
+        type: string
+    secrets:
+      CLOUDSMITH_API_KEY:
+        required: true
+
+permissions:
+  contents: read
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      - uses: actions/download-artifact@v4
         with:
-          go-version: "1.25"
-
-      - run: go test ./...
-
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y debhelper devscripts
-
-      - name: Create orig tarball
+          pattern: packages-*
+          path: dist
+          merge-multiple: true
+      - name: Generate checksums and release notes
         run: |
-          VERSION=$(head -1 debian/changelog | grep -oP '\(\K[^)]+' | sed 's/-.*//')
-          tar czf ../pve-snapshot-api_${VERSION}.orig.tar.gz --exclude=.git --exclude=debian --transform "s,^\.,pve-snapshot-api-${VERSION}," .
-
-      - name: Build binary and source packages
-        run: dpkg-buildpackage -us -uc -d
-
+          python3 scripts/release-metadata.py --notes > "$RUNNER_TEMP/release-notes.md"
+          cd dist
+          sha256sum ./* > SHA256SUMS
       - name: Install Cloudsmith CLI
         uses: cloudsmith-io/cloudsmith-cli-action@v2
         with:
           api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
-
-      - name: Upload to Cloudsmith (stable)
+      - name: Upload packages to Cloudsmith
+        env:
+          CHANNEL: ${{ inputs.channel }}
         run: |
-          cloudsmith push deb freshost/pve-snapshot-api/debian/bookworm ../pve-snapshot-api_*.deb
-          cloudsmith push deb freshost/pve-snapshot-api/debian/trixie ../pve-snapshot-api_*.deb
-          cloudsmith push deb freshost/pve-snapshot-api/debian/bookworm ../pve-snapshot-api_*.dsc --sources-file ../pve-snapshot-api_*.orig.tar.gz --changes-file ../pve-snapshot-api_*.debian.tar.xz
-          cloudsmith push deb freshost/pve-snapshot-api/debian/trixie ../pve-snapshot-api_*.dsc --sources-file ../pve-snapshot-api_*.orig.tar.gz --changes-file ../pve-snapshot-api_*.debian.tar.xz
+          options=()
+          if [ "$CHANNEL" = dev ]; then options=(--component dev); fi
+          for distribution in bookworm trixie; do
+            for package in dist/*.deb; do
+              cloudsmith push deb "freshost/pve-snapshot-api/debian/$distribution" "$package" "${options[@]}"
+            done
+            cloudsmith push deb "freshost/pve-snapshot-api/debian/$distribution" dist/*.dsc \
+              --sources-file dist/*.orig.tar.gz --changes-file dist/*.debian.tar.xz "${options[@]}"
+          done
+      - name: Publish GitHub Release
+        if: inputs.channel == 'stable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh release create "v$VERSION" dist/* \
+            --target "$GITHUB_SHA" --title "v$VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
