@@ -1,7 +1,6 @@
 BINARY=pve-snapshot-api
-VERSION=$(shell head -1 debian/changelog | grep -oP '\(.*?\)' | tr -d '()')
 
-.PHONY: build test vet clean deb
+.PHONY: build test vet clean deb release-check
 
 build:
 	CGO_ENABLED=0 go build -ldflags="-s -w" -o $(BINARY) ./cmd/pve-snapshot-api/
@@ -19,3 +18,8 @@ clean:
 
 deb:
 	dpkg-buildpackage -us -uc -b
+
+release-check:
+	python3 scripts/release-metadata.py
+	python3 -m unittest discover -s scripts -p 'test_*.py'
+	go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11

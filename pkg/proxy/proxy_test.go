@@ -46,7 +46,7 @@ func localHostname(t *testing.T) string {
 	t.Helper()
 	h, err := os.Hostname()
 	require.NoError(t, err)
-	return h
+	return strings.SplitN(h, ".", 2)[0]
 }
 
 // --- ShouldProxy tests ---
@@ -74,7 +74,7 @@ func TestShouldProxy_ReturnsTrueForRemoteNode(t *testing.T) {
 	assert.True(t, p.ShouldProxy(req, "remote-node"), "should proxy requests for a remote node")
 }
 
-func TestShouldProxy_ReturnsFalseWhenAlreadyForwarded(t *testing.T) {
+func TestShouldProxy_RejectsLocalExecutionWhenAlreadyForwarded(t *testing.T) {
 	hostname := localHostname(t)
 	cs := newTestCluster(t, []clusterNode{
 		{Name: hostname, IP: "127.0.0.1"},
@@ -84,7 +84,7 @@ func TestShouldProxy_ReturnsFalseWhenAlreadyForwarded(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/snapshots", nil)
 	req.Header.Set("X-Forwarded-Node", "remote-node")
-	assert.False(t, p.ShouldProxy(req, "remote-node"), "should not proxy when X-Forwarded-Node is set")
+	assert.True(t, p.ShouldProxy(req, "remote-node"), "a header cannot authorize local execution")
 }
 
 func TestShouldProxy_ReturnsFalseForEmptyNode(t *testing.T) {
@@ -182,7 +182,7 @@ func TestForward_ReturnsErrorForUnknownNode(t *testing.T) {
 	p.Forward(rec, req, "unknown-node")
 
 	assert.Equal(t, http.StatusBadGateway, rec.Code)
-	assert.Contains(t, rec.Body.String(), "NODE_NOT_FOUND")
+	assert.Contains(t, rec.Body.String(), "not found")
 	assert.Contains(t, rec.Body.String(), "unknown-node")
 }
 

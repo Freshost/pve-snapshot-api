@@ -1,26 +1,24 @@
 package api
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
+	"sync"
 
 	"github.com/freshost/pve-snapshot-api/pkg/auth"
 	"github.com/freshost/pve-snapshot-api/pkg/cluster"
 	"github.com/freshost/pve-snapshot-api/pkg/config"
 	"github.com/freshost/pve-snapshot-api/pkg/pool"
 	"github.com/freshost/pve-snapshot-api/pkg/proxy"
+	"github.com/freshost/pve-snapshot-api/pkg/pvetls"
 	"github.com/freshost/pve-snapshot-api/pkg/storage"
 	"github.com/freshost/pve-snapshot-api/pkg/task"
 )
 
-const pveCAPath = "/etc/pve/pve-root-ca.pem"
-
 // Server holds all dependencies for the API reverse proxy.
 type Server struct {
+	mutationMu   sync.Mutex
 	backend      storage.StorageBackend
 	auth         *auth.Authenticator
 	proxy        *proxy.Proxy
@@ -44,16 +42,7 @@ func NewServer(
 	target, _ := url.Parse(cfg.ProxmoxAPIURL)
 
 	pveProxy := httputil.NewSingleHostReverseProxy(target)
-	// Trust PVE CA for the upstream connection
-	tlsConfig := &tls.Config{}
-	if caCert, err := os.ReadFile(pveCAPath); err == nil {
-		certPool := x509.NewCertPool()
-		certPool.AppendCertsFromPEM(caCert)
-		tlsConfig.RootCAs = certPool
-	} else {
-		tlsConfig.InsecureSkipVerify = true
-	}
-	pveProxy.Transport = &http.Transport{TLSClientConfig: tlsConfig}
+	pveProxy.Transport = pvetls.Transport(cfg.CAFile)
 
 	s := &Server{
 		backend:      backend,
@@ -69,8 +58,8 @@ func NewServer(
 	mux := http.NewServeMux()
 
 	// Intercepted Proxmox-compatible routes
-	mux.HandleFunc("POST /api2/json/nodes/{node}/storage/{storage}/content/{volume}", s.handleCopyVolume)
-	mux.HandleFunc("DELETE /api2/json/nodes/{node}/storage/{storage}/content/{disk}", s.handleDeleteVolume)
+	mux.HandleFunc("POST /api2/json/nodes/{node}/storage/{storage}/content/{volume...}", s.handleCopyVolume)
+	mux.HandleFunc("DELETE /api2/json/nodes/{node}/storage/{storage}/content/{disk...}", s.handleDeleteVolume)
 	mux.HandleFunc("GET /api2/json/nodes/{node}/tasks/{upid}/status", s.handleTaskStatus)
 
 	// Health check

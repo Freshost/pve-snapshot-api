@@ -5,57 +5,111 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      package: ${{ steps.meta.outputs.package }}
+      channel: ${{ steps.channel.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: meta
+        run: python3 scripts/release-metadata.py >> "$GITHUB_OUTPUT"
+      - id: channel
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            echo 'channel=dev' >> "$GITHUB_OUTPUT"
+          else
+            echo 'channel=stable' >> "$GITHUB_OUTPUT"
+          fi
+
   ci:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
-
+          go-version-file: go.mod
+      - run: test -z "$(gofmt -l cmd pkg)"
       - run: go vet ./...
+      - run: go test -race ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Validate release tooling
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
 
-      - run: go test ./...
-
-  dev-build:
-    if: github.event_name == 'push'
-    needs: ci
-    runs-on: ubuntu-latest
+  package:
+    needs: metadata
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
-
+          go-version-file: go.mod
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y debhelper devscripts
-
-      - name: Set dev version
+      - name: Set development version
+        if: needs.metadata.outputs.channel == 'dev'
+        env:
+          BASE_VERSION: ${{ needs.metadata.outputs.package }}
         run: |
-          BASE_VERSION=$(head -1 debian/changelog | grep -oP '\(\K[^)]+')
-          DEV_VERSION="${BASE_VERSION}~dev$(date -u +%Y%m%d.%H%M).${GITHUB_SHA::7}"
+          DEV_VERSION="${BASE_VERSION}+dev${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}.${GITHUB_SHA::7}"
           sed -i "1s/(${BASE_VERSION})/(${DEV_VERSION})/" debian/changelog
-
-      - name: Create orig tarball
-        run: |
-          VERSION=$(head -1 debian/changelog | grep -oP '\(\K[^)]+' | sed 's/-.*//')
-          tar czf ../pve-snapshot-api_${VERSION}.orig.tar.gz --exclude=.git --exclude=debian --transform "s,^\.,pve-snapshot-api-${VERSION}," .
-
-      - name: Build binary and source packages
-        run: dpkg-buildpackage -us -uc -d
-
-      - name: Install Cloudsmith CLI
-        uses: cloudsmith-io/cloudsmith-cli-action@v2
+      - run: bash scripts/build-package.sh
+      - uses: actions/upload-artifact@v4
         with:
-          api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
+          name: packages-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
 
-      - name: Upload to Cloudsmith (dev)
-        run: |
-          cloudsmith push deb freshost/pve-snapshot-api/debian/bookworm ../pve-snapshot-api_*.deb --component dev --republish
-          cloudsmith push deb freshost/pve-snapshot-api/debian/trixie ../pve-snapshot-api_*.deb --component dev --republish
-          cloudsmith push deb freshost/pve-snapshot-api/debian/bookworm ../pve-snapshot-api_*.dsc --sources-file ../pve-snapshot-api_*.orig.tar.gz --changes-file ../pve-snapshot-api_*.debian.tar.xz --component dev --republish
-          cloudsmith push deb freshost/pve-snapshot-api/debian/trixie ../pve-snapshot-api_*.dsc --sources-file ../pve-snapshot-api_*.orig.tar.gz --changes-file ../pve-snapshot-api_*.debian.tar.xz --component dev --republish
+  zfs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install ZFS
+        run: sudo apt-get update && sudo apt-get install -y zfsutils-linux && sudo modprobe zfs
+      - name: Native clone lifecycle
+        run: sudo env "PATH=$PATH" "GOCACHE=$RUNNER_TEMP/go-cache-root" sh scripts/test-zfs.sh
+
+  publish:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.repository == 'Freshost/pve-snapshot-api'
+    needs: [metadata, ci, package, zfs]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.metadata.outputs.version }}
+      channel: ${{ needs.metadata.outputs.channel }}
+    secrets: inherit

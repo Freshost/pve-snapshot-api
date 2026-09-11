@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -164,7 +165,7 @@ func TestIsLocal_MatchesHostname(t *testing.T) {
 	hostname, err := os.Hostname()
 	require.NoError(t, err)
 
-	assert.True(t, cs.IsLocal(hostname), "IsLocal should return true for the local hostname")
+	assert.True(t, cs.IsLocal(strings.SplitN(hostname, ".", 2)[0]), "IsLocal should return true for the local hostname")
 	assert.False(t, cs.IsLocal("some-other-node"), "IsLocal should return false for a different hostname")
 }
 

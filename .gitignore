@@ -2,3 +2,15 @@
 *.deb
 *.changes
 *.buildinfo
+
+/dist/
+__pycache__/
+
+# Local credentials and runtime output
+.env
+.env.*
+*.key
+*.pem
+*.log
+/config.yaml
+/tasks.json
