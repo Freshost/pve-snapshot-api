@@ -10,7 +10,8 @@ and proxies other requests to Proxmox.
 
 ## Requirements
 
-- Proxmox VE with `zfspool` storage and ZFS VM volumes (`vm-<id>-disk-<index>`).
+- Proxmox VE with `zfspool` storage and ZFS VM volumes
+  (`vm-<id>-<name>`, including CSI PVC names).
 - A PVE API token with `Datastore.Allocate` on the relevant storage.
 - Installation on each node used by the middleware.
 

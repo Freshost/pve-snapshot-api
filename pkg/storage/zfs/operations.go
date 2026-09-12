@@ -9,15 +9,16 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/freshost/pve-snapshot-api/pkg/volume"
 )
 
-var diskName = regexp.MustCompile(`^vm-[1-9][0-9]*-disk-[0-9]+$`)
 var datasetPath = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.:-]*(/[a-zA-Z0-9][a-zA-Z0-9_.:-]*)+$`)
 
 type dataset struct{ name, kind, origin, guid, sourceGUID string }
 
 func validateDisk(ds string) error {
-	if !datasetPath.MatchString(ds) || !diskName.MatchString(path.Base(ds)) {
+	if !datasetPath.MatchString(ds) || !volume.ValidName(path.Base(ds)) {
 		return fmt.Errorf("unsupported volume dataset %q", ds)
 	}
 	return nil

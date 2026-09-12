@@ -57,6 +57,11 @@ func NewServer(
 
 	mux := http.NewServeMux()
 
+	// Collection POST allocates a new disk in PVE; it is not a copy operation.
+	// Register both forms to forward POST bodies without a ServeMux redirect.
+	mux.HandleFunc("POST /api2/json/nodes/{node}/storage/{storage}/content", s.handleProxy)
+	mux.HandleFunc("POST /api2/json/nodes/{node}/storage/{storage}/content/{$}", s.handleProxy)
+
 	// Intercepted Proxmox-compatible routes
 	mux.HandleFunc("POST /api2/json/nodes/{node}/storage/{storage}/content/{volume...}", s.handleCopyVolume)
 	mux.HandleFunc("DELETE /api2/json/nodes/{node}/storage/{storage}/content/{disk...}", s.handleDeleteVolume)

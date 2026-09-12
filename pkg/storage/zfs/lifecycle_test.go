@@ -202,27 +202,29 @@ func permutations(a []int) [][]int {
 	return out
 }
 func TestCloneLifecycleAllDeletionOrders(t *testing.T) {
-	names := []string{"tank/data/vm-100-disk-0", "tank/data/vm-200-disk-0", "tank/data/vm-300-disk-0", "tank/data/vm-400-disk-0"}
-	for _, order := range permutations([]int{0, 1, 2, 3}) {
-		t.Run(fmt.Sprint(order), func(t *testing.T) {
-			m := newModel()
-			m.add(names[0])
-			z := New(&config.Config{ZFSTimeout: time.Second}, m.run)
-			require.NoError(t, z.CopyVolume(context.Background(), names[0], names[1]))
-			require.NoError(t, z.CopyVolume(context.Background(), names[0], names[2]))
-			require.NoError(t, z.CopyVolume(context.Background(), names[1], names[3]))
-			for _, i := range order {
-				require.NoError(t, z.DestroyVolume(context.Background(), names[i]), m.commands)
-				require.NotContains(t, m.volumes, names[i])
-				for _, v := range m.volumes {
-					if v.origin != "-" {
-						require.Contains(t, m.snaps, v.origin, "live clone must retain its origin")
+	for _, suffix := range []string{"disk-0", "pvc-11111111-2222-4333-8444-555555555555"} {
+		names := []string{"tank/data/vm-100-" + suffix, "tank/data/vm-200-" + suffix, "tank/data/vm-300-" + suffix, "tank/data/vm-400-" + suffix}
+		for _, order := range permutations([]int{0, 1, 2, 3}) {
+			t.Run(suffix+fmt.Sprint(order), func(t *testing.T) {
+				m := newModel()
+				m.add(names[0])
+				z := New(&config.Config{ZFSTimeout: time.Second}, m.run)
+				require.NoError(t, z.CopyVolume(context.Background(), names[0], names[1]))
+				require.NoError(t, z.CopyVolume(context.Background(), names[0], names[2]))
+				require.NoError(t, z.CopyVolume(context.Background(), names[1], names[3]))
+				for _, i := range order {
+					require.NoError(t, z.DestroyVolume(context.Background(), names[i]), m.commands)
+					require.NotContains(t, m.volumes, names[i])
+					for _, v := range m.volumes {
+						if v.origin != "-" {
+							require.Contains(t, m.snaps, v.origin, "live clone must retain its origin")
+						}
 					}
 				}
-			}
-			require.Empty(t, m.volumes)
-			require.Empty(t, m.snaps)
-		})
+				require.Empty(t, m.volumes)
+				require.Empty(t, m.snaps)
+			})
+		}
 	}
 }
 func TestCopyRetryAndFailureCleanup(t *testing.T) {
