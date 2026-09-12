@@ -30,3 +30,22 @@ func TestVolumeBoundaries(t *testing.T) {
 	require.NoError(t, e)
 	require.Equal(t, "vm-100-disk-0", v)
 }
+
+func TestCSIVolumeToDataset(t *testing.T) {
+	for _, name := range []string{
+		"vm-100-pvc-11111111-2222-4333-8444-555555555555",
+		"vm-100-snapshot-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+	} {
+		for _, id := range []string{name, "local-zfs:" + name} {
+			v, err := NormalizeVolume("local-zfs", id)
+			require.NoError(t, err)
+			dataset, err := (&Info{Type: "zfspool", Pool: "tank/data"}).Dataset(v)
+			require.NoError(t, err)
+			require.Equal(t, "tank/data/"+name, dataset)
+		}
+		for _, id := range []string{name + "/child", name + "@snap", name + "#bookmark", "other:" + name} {
+			_, err := NormalizeVolume("local-zfs", id)
+			require.Error(t, err)
+		}
+	}
+}

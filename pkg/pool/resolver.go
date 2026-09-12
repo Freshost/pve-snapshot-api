@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/freshost/pve-snapshot-api/pkg/volume"
 )
 
 type CommandRunner func(context.Context, string, ...string) ([]byte, error)
@@ -22,7 +24,6 @@ type Info struct {
 }
 
 var validStorage = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`)
-var validVolume = regexp.MustCompile(`^vm-[1-9][0-9]*-disk-[0-9]+$`)
 var validDataset = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.:-]*(/[a-zA-Z0-9][a-zA-Z0-9_.:-]*)*$`)
 
 func New(timeout time.Duration, run CommandRunner) *Resolver {
@@ -71,16 +72,16 @@ func NormalizeVolume(storage, id string) (string, error) {
 		}
 		id = name
 	}
-	if !validVolume.MatchString(id) {
-		return "", fmt.Errorf("only vm-<id>-disk-<index> ZFS volumes are supported")
+	if !volume.ValidName(id) {
+		return "", fmt.Errorf("only vm-<id>-<name> ZFS block volumes are supported")
 	}
 	return id, nil
 }
-func (i *Info) Dataset(volume string) (string, error) {
-	if i.Type != "zfspool" || !validDataset.MatchString(i.Pool) || !validVolume.MatchString(volume) {
+func (i *Info) Dataset(name string) (string, error) {
+	if i.Type != "zfspool" || !validDataset.MatchString(i.Pool) || !volume.ValidName(name) {
 		return "", fmt.Errorf("invalid ZFS pool or volume")
 	}
-	return i.Pool + "/" + volume, nil
+	return i.Pool + "/" + name, nil
 }
 func (r *Resolver) Resolve(ctx context.Context, name string) (string, error) {
 	i, e := r.Fetch(ctx, name)

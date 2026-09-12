@@ -27,26 +27,28 @@ func TestRealZFSLifecycle(t *testing.T) {
 		require.NoError(t, err, string(out))
 		return strings.TrimSpace(string(out))
 	}
-	for index, order := range permutations([]int{0, 1, 2, 3}) {
-		t.Run(fmt.Sprint(order), func(t *testing.T) {
-			parent := fmt.Sprintf("%s/case%d", root, index)
-			run("create", parent)
-			names := []string{parent + "/vm-100-disk-0", parent + "/vm-200-disk-0", parent + "/vm-300-disk-0", parent + "/vm-400-disk-0"}
-			run("create", "-s", "-V", "8M", names[0])
-			require.NoError(t, z.CopyVolume(ctx, names[0], names[1]))
-			require.NoError(t, z.CopyVolume(ctx, names[0], names[2]))
-			require.NoError(t, z.CopyVolume(ctx, names[1], names[3]))
-			require.NoError(t, z.CopyVolume(ctx, names[0], names[1]))
-			alive := map[int]bool{0: true, 1: true, 2: true, 3: true}
-			for _, i := range order {
-				require.NoError(t, z.DestroyVolume(ctx, names[i]))
-				delete(alive, i)
-				for j := range alive {
-					require.Equal(t, "8388608", run("get", "-Hp", "-o", "value", "volsize", names[j]))
+	for _, suffix := range []string{"disk-0", "pvc-11111111-2222-4333-8444-555555555555"} {
+		for index, order := range permutations([]int{0, 1, 2, 3}) {
+			t.Run(suffix+fmt.Sprint(order), func(t *testing.T) {
+				parent := fmt.Sprintf("%s/%s-case%d", root, suffix, index)
+				run("create", parent)
+				names := []string{parent + "/vm-100-" + suffix, parent + "/vm-200-" + suffix, parent + "/vm-300-" + suffix, parent + "/vm-400-" + suffix}
+				run("create", "-s", "-V", "8M", names[0])
+				require.NoError(t, z.CopyVolume(ctx, names[0], names[1]))
+				require.NoError(t, z.CopyVolume(ctx, names[0], names[2]))
+				require.NoError(t, z.CopyVolume(ctx, names[1], names[3]))
+				require.NoError(t, z.CopyVolume(ctx, names[0], names[1]))
+				alive := map[int]bool{0: true, 1: true, 2: true, 3: true}
+				for _, i := range order {
+					require.NoError(t, z.DestroyVolume(ctx, names[i]))
+					delete(alive, i)
+					for j := range alive {
+						require.Equal(t, "8388608", run("get", "-Hp", "-o", "value", "volsize", names[j]))
+					}
 				}
-			}
-			require.Equal(t, "", run("list", "-H", "-o", "name", "-r", "-t", "snapshot", parent))
-			run("destroy", parent)
-		})
+				require.Equal(t, "", run("list", "-H", "-o", "name", "-r", "-t", "snapshot", parent))
+				run("destroy", parent)
+			})
+		}
 	}
 }

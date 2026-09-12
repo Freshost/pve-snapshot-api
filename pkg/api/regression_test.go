@@ -262,3 +262,69 @@ func TestAcceptedMutationSurvivesDisconnect(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
 	require.Equal(t, "OK", store.Get(result.Data).ExitStatus)
 }
+
+func TestContentCollectionPostPassThrough(t *testing.T) {
+	for _, node := range []string{"pve1", "pve2"} {
+		for _, trailing := range []string{"", "/"} {
+			for _, ct := range []string{"application/json", "application/x-www-form-urlencoded"} {
+				t.Run(node+trailing+ct, func(t *testing.T) {
+					body := `{"vmid":100,"filename":"vm-100-pvc-11111111-2222-4333-8444-555555555555","size":"1G"}`
+					if ct != "application/json" {
+						body = "vmid=100&filename=vm-100-pvc-11111111-2222-4333-8444-555555555555&size=1G"
+					}
+					path := "/api2/json/nodes/" + node + "/storage/local-zfs/content" + trailing
+					called := false
+					up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						called = true
+						data, err := io.ReadAll(r.Body)
+						require.NoError(t, err)
+						require.Equal(t, "POST", r.Method)
+						require.Equal(t, path, r.URL.Path)
+						require.Equal(t, "format=raw", r.URL.RawQuery)
+						require.Equal(t, body, string(data))
+						require.Equal(t, testToken, r.Header.Get("Authorization"))
+						require.Equal(t, ct, r.Header.Get("Content-Type"))
+						w.WriteHeader(http.StatusAccepted)
+						_, _ = io.WriteString(w, `{"data":"native-task"}`)
+					}))
+					defer up.Close()
+					h, backend, _ := regressionServer(t, up.URL, func(context.Context, string, ...string) ([]byte, error) {
+						t.Error("collection allocation must not resolve local storage")
+						return []byte(`{"type":"zfspool","pool":"tank/data"}`), nil
+					}, nil, nil)
+					r := httptest.NewRequest("POST", path+"?format=raw", strings.NewReader(body))
+					r.Header.Set("Content-Type", ct)
+					r.Header.Set("Authorization", testToken)
+					w := httptest.NewRecorder()
+					h.ServeHTTP(w, r)
+					require.True(t, called, "allocation was intercepted or redirected")
+					require.Equal(t, http.StatusAccepted, w.Code)
+					require.Equal(t, `{"data":"native-task"}`, w.Body.String())
+					require.Empty(t, backend.clonedSnapshots)
+					require.Empty(t, backend.destroyedVols)
+				})
+			}
+		}
+	}
+}
+
+func TestCSINamedVolumeCopyAndDelete(t *testing.T) {
+	source := "vm-100-pvc-11111111-2222-4333-8444-555555555555"
+	target := "vm-100-snapshot-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+	h, backend := newTestServer(t, nil)
+	r := httptest.NewRequest("POST", "/api2/json/nodes/pve1/storage/local-zfs/content/"+source, strings.NewReader(`{"target":"local-zfs:`+target+`"}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.NotEmpty(t, backend.clonedSnapshots)
+	for _, name := range []string{source, target} {
+		r = httptest.NewRequest("DELETE", "/api2/json/nodes/pve1/storage/local-zfs/content/"+name, nil)
+		r.Header.Set("Authorization", testToken)
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	}
+	require.Len(t, backend.destroyedVols, 2)
+}

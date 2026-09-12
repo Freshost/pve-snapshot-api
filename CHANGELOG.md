@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.1] - 2026-09-12
+
+- Fix native volume allocation being intercepted by the copy handler.
+- Accept CSI PVC and snapshot names for ZFS copy and deletion.
+
 ## [0.2.0] - 2026-09-10
 
 ### Fixed

@@ -1,3 +1,10 @@
+pve-snapshot-api (0.2.1-1) stable; urgency=high
+
+  * Forward native volume allocation without interception or redirection.
+  * Support CSI PVC and snapshot names in ZFS copy and deletion.
+
+ -- Freshost <support@freshost.net>  Sat, 12 Sep 2026 12:00:00 +0000
+
 pve-snapshot-api (0.2.0-1) stable; urgency=high
 
   * Fix scoped ACL evaluation, task authorization and cluster request routing.
